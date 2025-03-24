@@ -2,6 +2,7 @@
 import { HomePage } from "./pages/home-page";
 import { PokemonPage } from "./pages/pokemon-page";
 import CommentPage from "./pages/comments-page";
+import GeminiTestPage from "./pages/gemini-page";
 import { usePage } from "./hooks/usePage";
 import { useEffect, useState } from "react";
 import { sendToDevvit } from "./utils";
@@ -16,6 +17,8 @@ const getPage = (page, { postId }) => {
       return <PokemonPage />;
     case "comments":
       return <CommentPage />;
+    case "gemini":
+      return <GeminiTestPage />;
     default:
       throw new Error(`Unknown page: ${page}`);
   }

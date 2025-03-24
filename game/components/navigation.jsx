@@ -9,6 +9,7 @@ export const Navigation = ({ orientation = "horizontal" }) => {
     { id: "home", label: "Home", icon: "🏠" },
     { id: "pokemon", label: "Pokemon", icon: "🎮" },
     { id: "comments", label: "Comments", icon: "🔬" },
+    { id: "gemini", label: "Gemini", icon: "🪐" },
     // Add more pages as needed
   ];
 
