@@ -10,7 +10,7 @@ export const Layout = ({ children, variant = "default" }) => {
     <div className="flex h-full flex-col">
       {variant === "sidebar" ? (
         <div className="flex h-full">
-          <div className="w-64 bg-slate-800 p-4">
+          <div className="w-64 bg-zinc-950 p-4">
             <Navigation orientation="vertical" />
           </div>
           <div className="flex-grow overflow-auto">{children}</div>

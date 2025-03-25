@@ -7,7 +7,8 @@ export type WebviewToBlockMessage =
       payload: { name: string };
     }
   | { type: "GET_TOP_COMMENTS" }
-  // Add Gemini story generation request
+  // Story-specific message types
+  | { type: "FETCH_STORY_DATA" }
   | {
       type: "GENERATE_STORY_REQUEST";
       payload: {
@@ -16,11 +17,11 @@ export type WebviewToBlockMessage =
         currentChapter?: number;
       };
     }
-  // Add Gemini image generation request
   | {
       type: "GENERATE_IMAGE_REQUEST";
       payload: {
         prompt: string;
+        chapterNumber?: number; // Optional chapter number for saving the image
       };
     };
 
@@ -45,8 +46,32 @@ export type BlocksToWebviewMessage =
           score: number;
         }>;
       };
+      error?: string;
     }
-  // Add Gemini story generation response
+  // Story data response with chapters and metadata
+  | {
+      type: "STORY_DATA_RESPONSE";
+      payload: {
+        data: {
+          storyTitle: string;
+          totalChapters: number;
+          currentChapter: number;
+          createdAt: string;
+          chapters: {
+            [key: string]: {
+              content: string;
+              image: string;
+              topComment: string;
+              unlockedAt?: string;
+            };
+          };
+        };
+      };
+    }
+  | {
+      type: "STORY_DATA_ERROR";
+      error: string;
+    }
   | {
       type: "GENERATE_STORY_RESPONSE";
       success: boolean;
@@ -58,7 +83,6 @@ export type BlocksToWebviewMessage =
         totalChapters: number;
       };
     }
-  // Add Gemini image generation response
   | {
       type: "GENERATE_IMAGE_RESPONSE";
       success: boolean;
