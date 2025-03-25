@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { sendToDevvit } from "./utils";
 import { useDevvitListener } from "./hooks/useDevvitListener";
 import { Layout } from "./components/layout";
-
+import StoryPage from "./pages/story-page";
 const getPage = (page, { postId }) => {
   switch (page) {
     case "home":
@@ -19,6 +19,9 @@ const getPage = (page, { postId }) => {
       return <CommentPage />;
     case "gemini":
       return <GeminiTestPage />;
+    case "story":
+      return <StoryPage />;
+
     default:
       throw new Error(`Unknown page: ${page}`);
   }

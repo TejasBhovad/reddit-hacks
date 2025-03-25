@@ -53,22 +53,17 @@ const GeminiTestPage = () => {
   React.useEffect(() => {
     if (storyResponse) {
       setStoryLoading(false);
-
       setGeneratedStory(storyResponse.text);
     }
-    // console.log(storyResponse);
   }, [storyResponse]);
 
   React.useEffect(() => {
     if (imageResponse) {
       setImageLoading(false);
 
-      if (imageResponse.success) {
-        setGeneratedImages(imageResponse.payload.images);
-      } else {
-        setImageError(imageResponse.message || "Failed to generate image");
-      }
+      setGeneratedImages(imageResponse.images[0].base64Data);
     }
+    // console.log(imageResponse.images);
   }, [imageResponse]);
 
   return (
@@ -175,16 +170,11 @@ const GeminiTestPage = () => {
         {generatedImages.length > 0 && (
           <div className="mt-4">
             <h3 className="mb-2 font-semibold text-white">Generated Images:</h3>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {generatedImages.map((image, index) => (
-                <div key={index} className="rounded bg-gray-700 p-2">
-                  <img
-                    src={image}
-                    alt={`Generated image ${index + 1}`}
-                    className="h-auto w-full rounded"
-                  />
-                </div>
-              ))}
+            <div className="rounded bg-gray-700 p-2">
+              <img
+                src={`data:image/png;base64,${generatedImages}`}
+                className="h-auto w-full rounded"
+              />
             </div>
           </div>
         )}
