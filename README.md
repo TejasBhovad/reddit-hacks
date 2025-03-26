@@ -1,44 +1,22 @@
-# React + Tailwind Webview Template for Devvit
+# PlotPick Game
 
-This is a template for creating a Devvit webview app using React and Tailwind CSS. This repo is highly based off of [devvit-webview-react](https://github.com/mwood23/devvit-webview-react) repository.
-This repo focusses of eliminating typescript(where possible) and making the template more beginner friendly.
+Community driven [Devvit](https://developers.reddit.com) game where users can pick the plot of the game.
 
-> Yes there is typescript in the files, but devvit requires typescript as entry point.
+![Preview Image](./github/preview.png)
 
-## Getting Started
+🌐 Live Demo: https://www.reddit.com/r/PlotPickGame/comments/1jk2prj/starry_night
 
-### Prerequisites
+Each post starts with an inital story and users can comment on the post with their ideas for the next part of the story. The most upvoted comment is used to generate the next part of the story using Gemini Flash Models, an image is also generated based on this.
 
-- Node.js
-- npm or yarn or pnpm
-- Git
-- Devvit CLI (login required)
+## LLMs used
 
-1.  Install the Devvit CLI by running `npm install -g @devvit/cli` or `yarn global add @devvit/cli` or `pnpm add -g @devvit/cli`
-2.  Login to your Devvit account by running `devvit login`
-3.  Upload your app by running `devvit upload` in the root directory of your app
+- gemini-2.0-flash: for generating the next part of the story
+- gemini-2.0-flash-exp-image-generation: for generating the image based on the story
 
-### Installation
+NOTE: We are on the free plan of Gemini Flash Models so there can be significant downtime in case of exhausted credits.
 
-1. Clone this repository
-2. Run `npm install` or `yarn install` or `pnpm install`
-3. modify the `devvit.yaml` file to match your app name also update `package.json` with your subreddit name
-4. Run `npm run dev` or `yarn dev` or `pnpm dev` to start the development server with HMR on reddit
+> Yes there is typescript and javascript both in the files, cause I dislike typescript(mostly cause dont use it extensively) but devvit requires typescript as entry point.
 
-# How the game is structured
+This repository was based on [github.com/TejasBhovad/devvit-template](https://github.com/TejasBhovad/devvit-template)
 
-`src` folder acts as the entry point for the game.\
-`src/backend` folder contains the API calls and the backend logic.\
-`src/constants.js` contains the secrets used in the game.\
-`src/main.tsx` is the entry point for the game. It is where everything devvit related is configured(custom post types, custom menus, etc).\
-`game` folder contains the game logic and the game components.\
-`game/components` folder contains the game components.\
-`game/hooks` folder contains the game hooks like navigation hooks, etc.\
-`game/pages` folder contains the game pages.\
-`games/public` folder contains the public assets like images, etc.\
-`games/App.jsx` is the entry point for the game. It is where the game is structured.\
-`games/shared.ts` contains the shared types and interfaces used in the game. Basically the types for Devvit Functions.\
-
-# Other references that might be useful
-
-- [Scheduler function](https://developers.reddit.com/docs/capabilities/scheduler)
+Upvote the post on DevPost [here](https://developers.reddit.com/post/plotpick-game)

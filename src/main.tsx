@@ -233,6 +233,7 @@ async function generateGeminiStory(
   6. Keep the tone consistent with the existing story.
   7. BE ORIGINAL - avoid common fantasy tropes and predictable outcomes.
   8. DO NOT summarize the story or repeat information - continue the narrative.
+  9. DO NOT use hastags, emojis, or other modern elements.
   
   FORMAT:
   - Write in third person past tense.
@@ -355,10 +356,12 @@ async function deleteAllComments(postId, context) {
     // Ensure post ID has t3_ prefix
     const formattedPostId = postId.startsWith("t3_") ? postId : `t3_${postId}`;
 
+    // Get all comments using the Listing's built-in pagination
     const comments = await context.reddit
       .getComments({
         postId: formattedPostId,
-        limit: 100, // Maximum allowed per request
+        limit: 1000, // Set a higher limit
+        pageSize: 100, // Maximum allowed per request
       })
       .all();
 
@@ -366,12 +369,14 @@ async function deleteAllComments(postId, context) {
       `Found ${comments.length} comments to delete from post ${postId}`,
     );
 
-    // For each comment, attempt to remove it using the correct method
+    // For each comment, attempt to remove it
     for (const comment of comments) {
       try {
-        // Use the correct remove method instead of removeComment
         await context.reddit.remove(comment.id, false);
         console.log(`Removed comment ${comment.id}`);
+
+        // Optional: Add a small delay to avoid rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 100));
       } catch (removeError) {
         console.error(`Failed to remove comment ${comment.id}:`, removeError);
       }
@@ -380,7 +385,6 @@ async function deleteAllComments(postId, context) {
     console.error(`Error deleting comments for post ${postId}:`, error);
   }
 }
-
 /**
  * Reset and rebuild the active stories list without using hashes
  */
