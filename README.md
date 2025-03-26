@@ -7,6 +7,10 @@ Community driven [Devvit](https://developers.reddit.com) game where users can pi
 
 🌐 Live Demo: https://www.reddit.com/r/PlotPickGame/comments/1jk2prj/starry_night
 
+📂 Source code: https://github.com/TejasBhovad/reddit-hacks
+
+📱 Application: https://developers.reddit.com/apps/plotpick-app
+
 Each post starts with an inital story and users can comment on the post with their ideas for the next part of the story. The most upvoted comment is used to generate the next part of the story using Gemini Flash Models, an image is also generated based on this.
 
 ## Features used
@@ -27,4 +31,4 @@ NOTE: We are on the free plan of Gemini Flash Models so there can be significant
 
 This repository was based on [github.com/TejasBhovad/devvit-template](https://github.com/TejasBhovad/devvit-template)
 
-Upvote the post on DevPost [here](https://developers.reddit.com/post/plotpick-game)
+Upvote the post on DevPost [here](https://devpost.com/software/plotpick)
