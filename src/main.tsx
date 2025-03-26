@@ -1,4 +1,4 @@
-import { Devvit, useWebView } from "@devvit/public-api";
+import { Devvit, useWebView, useAsync } from "@devvit/public-api";
 import { DEVVIT_SETTINGS_KEYS } from "./constants.js";
 import { useForm, Context, JSONObject } from "@devvit/public-api";
 import {
@@ -7,6 +7,7 @@ import {
 } from "../game/shared.js";
 import { Preview } from "./components/Preview.jsx";
 import { getPokemonByName } from "./backend/pokeapi.js";
+import { image } from "motion/react-client";
 
 // Constants for Redis
 const REDIS_KEY_EXPIRY_DAYS = 60; // Redis keys expire after 60 days
@@ -76,6 +77,58 @@ function ensureT3Prefix(postId: string): string {
 function getStoryDataKey(postId: string): string {
   const fullPostId = ensureT3Prefix(postId);
   return `post:${fullPostId}:data`;
+}
+/**
+ * New function to fetch just the story metadata, excluding heavy content like images
+ * This is used by the launch screen to reduce memory usage
+ */
+async function fetchStoryMetadata(context, postId) {
+  if (!postId) return null;
+
+  try {
+    const storyKey = getStoryDataKey(postId);
+    console.log(`[Launch Screen] Fetching minimal metadata from ${storyKey}`);
+
+    // Get the raw JSON string
+    const rawData = await context.redis.get(storyKey);
+    if (!rawData) return null;
+
+    // Parse it to get just the metadata we need
+    const fullData = JSON.parse(rawData);
+
+    // Extract only the basic fields we need for the launch screen
+    const currentChapter = fullData.currentChapter;
+
+    return {
+      storyTitle: fullData.storyTitle,
+      currentChapter: currentChapter,
+      totalChapters: fullData.totalChapters,
+      // Include a short preview of the chapter content with cleaned text
+      previewText: cleanupStoryText(
+        fullData.chapters?.[currentChapter]?.content?.substring(0, 250) || "",
+      ),
+      // Deliberately exclude the image data and full chapter content
+    };
+  } catch (error) {
+    console.error(`Error fetching story metadata for ${postId}:`, error);
+    return null;
+  }
+}
+
+// Function to clean up text by removing hashtags and normalizing line breaks
+function cleanupStoryText(text) {
+  if (!text) return "";
+
+  // Remove hashtags (##)
+  const withoutHashtags = text.replace(/#{2,}/g, "");
+
+  // Normalize line breaks (replace multiple with single line break)
+  const normalizedLineBreaks = withoutHashtags.replace(/\n{2,}/g, "\n");
+
+  // Remove all new lines
+  const withoutNewLines = normalizedLineBreaks.replace(/\n/g, "");
+
+  return withoutNewLines.trim();
 }
 
 /**
@@ -1160,230 +1213,320 @@ Devvit.addMenuItem({
   },
 });
 
-// Add a post type definition
+/**
+ * Optimized Story Launch Screen component using the new fetchStoryMetadata function
+ * This version avoids loading large base64 images and full story content
+ */
+function StoryLaunchScreen(context) {
+  const { postId, useState } = context;
+  const [storyMetadata, setStoryMetadata] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  // Use useAsync with the new dedicated metadata function
+  const { data, loading, error } = useAsync(
+    async () => {
+      if (!postId) return null;
+
+      // Use the new lightweight metadata function - this is key to reducing memory usage
+      return await fetchStoryMetadata(context, postId);
+    },
+    {
+      finally: (fetchedData) => {
+        if (fetchedData) {
+          console.log(
+            "[Launch Screen] Story metadata fetched successfully:",
+            fetchedData.storyTitle,
+          );
+          setStoryMetadata(fetchedData);
+        } else {
+          console.log(`[Launch Screen] No story metadata found`);
+          setLoadError("Story not found");
+        }
+        setIsLoading(false);
+      },
+      onError: (fetchError) => {
+        console.error(
+          "[Launch Screen] Error fetching story metadata:",
+          fetchError,
+        );
+        setLoadError("Failed to load story");
+        setIsLoading(false);
+      },
+    },
+  );
+
+  // WebView setup - using original message handlers but optimized
+  const { mount } = useWebView({
+    onMessage: async (event, { postMessage }) => {
+      console.log("[Launch Screen] Received message from WebView", event);
+      const data = event as unknown as WebviewToBlockMessage;
+
+      switch (data.type) {
+        case "INIT":
+          postMessage({
+            type: "INIT_RESPONSE",
+            payload: {
+              postId: postId!,
+              // Pass along metadata we already have
+              metadata: storyMetadata
+                ? {
+                    storyTitle: storyMetadata.storyTitle,
+                    currentChapter: storyMetadata.currentChapter,
+                    totalChapters: storyMetadata.totalChapters,
+                  }
+                : null,
+            },
+          });
+          break;
+
+        case "FETCH_STORY_DATA":
+          try {
+            // Use original story data fetching method unchanged
+            const storyKey = getStoryDataKey(postId!);
+            console.log(
+              `[Launch Screen] Fetching full story data from ${storyKey}`,
+            );
+
+            const storyData = await safeGetJson(context, storyKey);
+
+            if (storyData) {
+              console.log(
+                "[Launch Screen] Fetched full story data successfully",
+              );
+              postMessage({
+                type: "STORY_DATA_RESPONSE",
+                payload: {
+                  data: storyData,
+                },
+              });
+            } else {
+              console.log(
+                `[Launch Screen] No story data found for key ${storyKey}`,
+              );
+              postMessage({
+                type: "STORY_DATA_ERROR",
+                error: "No story data found",
+              });
+            }
+          } catch (error) {
+            console.error("[Launch Screen] Error fetching story data:", error);
+            postMessage({
+              type: "STORY_DATA_ERROR",
+              error: "Failed to fetch story data",
+            });
+          }
+          break;
+
+        // All other message handlers remain unchanged
+        case "GET_TOP_COMMENTS":
+          try {
+            const comments = await context.reddit
+              .getComments({
+                postId: context.postId!,
+                limit: 3, // Reduced from 5 to save resources
+                sort: "top",
+              })
+              .all();
+
+            postMessage({
+              type: "TOP_COMMENTS_RESPONSE",
+              payload: {
+                comments: comments.map((comment) => ({
+                  id: comment.id,
+                  body: comment.body.substring(0, 300), // Limit comment length
+                  author: comment.authorName,
+                  score: comment.score,
+                })),
+              },
+            });
+          } catch (error) {
+            console.error("[Launch Screen] Error fetching comments:", error);
+            context.ui.showToast("Failed to fetch comments");
+          }
+          break;
+
+        case "GENERATE_STORY_REQUEST":
+          try {
+            context.ui.showToast("Generating story...");
+            console.log(
+              "Generating story with prompt:",
+              data.payload.prompt,
+              "chapterCount:",
+              data.payload.chapterCount,
+              "currentChapter:",
+              data.payload.currentChapter,
+            );
+            const storyResult = await generateGeminiStory(
+              data.payload.prompt,
+              data.payload.chapterCount || 5,
+              data.payload.currentChapter || 1,
+              context,
+            );
+
+            if (storyResult.error) {
+              // Handle error case
+              postMessage({
+                type: "GENERATE_STORY_RESPONSE",
+                success: false,
+                error: storyResult.error,
+                message:
+                  typeof storyResult.message === "string"
+                    ? storyResult.message
+                    : "Unknown error",
+              });
+            } else {
+              // Handle success case
+              // Generate image using the story content
+              context.ui.showToast("Generating image for the chapter...");
+              const storyText = storyResult.text || "";
+              const imageResult = await generateGeminiImage(storyText, context);
+
+              let chapterImage = "";
+              if (imageResult && imageResult.length > 0) {
+                chapterImage = imageResult[0].base64Data;
+              }
+
+              // Return both the story and the generated image
+              postMessage({
+                type: "GENERATE_STORY_RESPONSE",
+                success: true,
+                payload: {
+                  text: storyText,
+                  chapterNumber: storyResult.chapterNumber,
+                  totalChapters: storyResult.totalChapters,
+                  image: chapterImage, // Include the generated image
+                },
+              });
+            }
+          } catch (error) {
+            console.error("Error generating story:", error);
+            postMessage({
+              type: "GENERATE_STORY_RESPONSE",
+              success: false,
+              error: "Failed to generate story",
+              message: error instanceof Error ? error.message : String(error),
+            });
+            context.ui.showToast("Failed to generate story");
+          }
+          break;
+
+        case "GENERATE_IMAGE_REQUEST":
+          try {
+            context.ui.showToast("Generating image...");
+
+            // Use the story content from the request as the image prompt
+            const imageResult = await generateGeminiImage(
+              data.payload.content || data.payload.prompt,
+              context,
+            );
+
+            if (!imageResult || imageResult.length === 0) {
+              postMessage({
+                type: "GENERATE_IMAGE_RESPONSE",
+                success: false,
+                error: "No images generated",
+                message: "The AI model did not return any images",
+              });
+            } else {
+              postMessage({
+                type: "GENERATE_IMAGE_RESPONSE",
+                success: true,
+                payload: {
+                  images: imageResult,
+                  count: imageResult.length,
+                },
+              });
+            }
+          } catch (error) {
+            console.error("Error generating image:", error);
+            postMessage({
+              type: "GENERATE_IMAGE_RESPONSE",
+              success: false,
+              error: "Failed to generate image",
+              message: error instanceof Error ? error.message : String(error),
+            });
+            context.ui.showToast("Failed to generate image");
+          }
+          break;
+
+        default:
+          console.error("[Launch Screen] Unknown message type:", data.type);
+          break;
+      }
+    },
+  });
+
+  return (
+    <vstack
+      height="100%"
+      width="100%"
+      padding="medium"
+      alignment="center middle"
+      backgroundColor="neutral-background" // Uses RPL semantic token for dark mode support
+    >
+      {isLoading ? (
+        <vstack alignment="center middle" gap="medium">
+          <text size="xlarge" color="neutral-content-strong">
+            Loading your adventure...
+          </text>
+        </vstack>
+      ) : loadError ? (
+        <vstack alignment="center middle" gap="medium">
+          <text size="large" color="danger-plain">
+            {loadError}
+          </text>
+          <button appearance="secondary" onPress={() => setIsLoading(true)}>
+            Retry
+          </button>
+        </vstack>
+      ) : (
+        <vstack alignment="center middle" gap="large" padding="large">
+          <vstack alignment="center middle" gap="small">
+            <text
+              size="xxlarge"
+              weight="bold"
+              alignment="center"
+              color="neutral-content-strong"
+            >
+              {storyMetadata?.storyTitle || "Untitled Story"}
+            </text>
+            <text size="medium" color="neutral-content" alignment="center">
+              Chapter {storyMetadata?.currentChapter} of{" "}
+              {storyMetadata?.totalChapters}
+            </text>
+          </vstack>
+
+          <vstack
+            backgroundColor="neutral-background-container"
+            padding="medium"
+            borderRadius="medium"
+            width="90%"
+          >
+            <text
+              size="medium"
+              alignment="center"
+              wrap
+              overflow="ellipsis"
+              maxHeight="80px"
+            >
+              {storyMetadata?.previewText || "Begin your adventure..."}
+            </text>
+          </vstack>
+
+          <button onPress={mount} appearance="primary" size="large">
+            Continue Your Adventure
+          </button>
+        </vstack>
+      )}
+    </vstack>
+  );
+}
+
+// Update the custom post type to use the optimized launch screen
 Devvit.addCustomPostType({
   name: "Experience Post",
   height: "tall",
-  render: (context) => {
-    const { mount } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>(
-      {
-        onMessage: async (event, { postMessage }) => {
-          console.log("Received message", event);
-          const data = event as unknown as WebviewToBlockMessage;
-
-          switch (data.type) {
-            case "INIT":
-              postMessage({
-                type: "INIT_RESPONSE",
-                payload: {
-                  postId: context.postId!,
-                },
-              });
-              break;
-            case "GET_POKEMON_REQUEST":
-              context.ui.showToast({
-                text: `Received message: ${JSON.stringify(data)}`,
-              });
-              const pokemon = await getPokemonByName(data.payload.name);
-
-              postMessage({
-                type: "GET_POKEMON_RESPONSE",
-                payload: {
-                  name: pokemon.name,
-                  number: pokemon.id,
-                  // Note that we don't allow outside images on Reddit if
-                  // wanted to get the sprite. Please reach out to support
-                  // if you need this for your app!
-                },
-              });
-              break;
-            case "FETCH_STORY_DATA":
-              try {
-                // Use standardized key format for fetching story data
-                const fullPostId = context.postId!;
-                const storyKey = getStoryDataKey(fullPostId);
-                console.log(`Fetching story data from ${storyKey}`);
-
-                const storyData = await safeGetJson(context, storyKey);
-
-                if (storyData) {
-                  console.log("Fetched story data successfully");
-                  postMessage({
-                    type: "STORY_DATA_RESPONSE",
-                    payload: {
-                      data: storyData,
-                    },
-                  });
-                } else {
-                  console.log(`No story data found for key ${storyKey}`);
-                  postMessage({
-                    type: "STORY_DATA_ERROR",
-                    error: "No story data found",
-                  });
-                }
-              } catch (error) {
-                console.error("Error fetching story data:", error);
-                postMessage({
-                  type: "STORY_DATA_ERROR",
-                  error: "Failed to fetch story data",
-                });
-              }
-              break;
-            case "GET_TOP_COMMENTS":
-              try {
-                const comments = await context.reddit
-                  .getComments({
-                    postId: context.postId!,
-                    limit: 5,
-                    sort: "top",
-                  })
-                  .all();
-
-                postMessage({
-                  type: "TOP_COMMENTS_RESPONSE",
-                  payload: {
-                    comments: comments.map((comment) => ({
-                      id: comment.id,
-                      body: comment.body,
-                      author: comment.authorName,
-                      score: comment.score,
-                    })),
-                  },
-                });
-              } catch (error) {
-                console.error("Error fetching comments:", error);
-                context.ui.showToast("Failed to fetch comments");
-              }
-              break;
-
-            case "GENERATE_STORY_REQUEST":
-              try {
-                context.ui.showToast("Generating story...");
-                console.log(
-                  "Generating story with prompt:",
-                  data.payload.prompt,
-                  "chapterCount:",
-                  data.payload.chapterCount,
-                  "currentChapter:",
-                  data.payload.currentChapter,
-                );
-                const storyResult = await generateGeminiStory(
-                  data.payload.prompt,
-                  data.payload.chapterCount || 5,
-                  data.payload.currentChapter || 1,
-                  context,
-                );
-
-                if (storyResult.error) {
-                  // Handle error case
-                  postMessage({
-                    type: "GENERATE_STORY_RESPONSE",
-                    success: false,
-                    error: storyResult.error,
-                    message:
-                      typeof storyResult.message === "string"
-                        ? storyResult.message
-                        : "Unknown error",
-                  });
-                } else {
-                  // Handle success case
-                  // Generate image using the story content
-                  context.ui.showToast("Generating image for the chapter...");
-                  const storyText = storyResult.text || "";
-                  const imageResult = await generateGeminiImage(
-                    storyText,
-                    context,
-                  );
-
-                  let chapterImage = "";
-                  if (imageResult && imageResult.length > 0) {
-                    chapterImage = imageResult[0].base64Data;
-                  }
-
-                  // Return both the story and the generated image
-                  postMessage({
-                    type: "GENERATE_STORY_RESPONSE",
-                    success: true,
-                    payload: {
-                      text: storyText,
-                      chapterNumber: storyResult.chapterNumber,
-                      totalChapters: storyResult.totalChapters,
-                      image: chapterImage, // Include the generated image
-                    },
-                  });
-                }
-              } catch (error) {
-                console.error("Error generating story:", error);
-                postMessage({
-                  type: "GENERATE_STORY_RESPONSE",
-                  success: false,
-                  error: "Failed to generate story",
-                  message:
-                    error instanceof Error ? error.message : String(error),
-                });
-                context.ui.showToast("Failed to generate story");
-              }
-              break;
-
-            case "GENERATE_IMAGE_REQUEST":
-              try {
-                context.ui.showToast("Generating image...");
-
-                // Use the story content from the request as the image prompt
-                const imageResult = await generateGeminiImage(
-                  data.payload.content || data.payload.prompt,
-                  context,
-                );
-
-                if (!imageResult || imageResult.length === 0) {
-                  postMessage({
-                    type: "GENERATE_IMAGE_RESPONSE",
-                    success: false,
-                    error: "No images generated",
-                    message: "The AI model did not return any images",
-                  });
-                } else {
-                  postMessage({
-                    type: "GENERATE_IMAGE_RESPONSE",
-                    success: true,
-                    payload: {
-                      images: imageResult,
-                      count: imageResult.length,
-                    },
-                  });
-                }
-              } catch (error) {
-                console.error("Error generating image:", error);
-                postMessage({
-                  type: "GENERATE_IMAGE_RESPONSE",
-                  success: false,
-                  error: "Failed to generate image",
-                  message:
-                    error instanceof Error ? error.message : String(error),
-                });
-                context.ui.showToast("Failed to generate image");
-              }
-              break;
-            default:
-              console.error("Unknown message type", data);
-              break;
-          }
-        },
-      },
-    );
-
-    return (
-      <vstack height="100%" width="100%" alignment="center middle">
-        <button
-          onPress={() => {
-            mount();
-          }}
-        >
-          Launch
-        </button>
-      </vstack>
-    );
-  },
+  render: StoryLaunchScreen,
 });
-
 export default Devvit;
